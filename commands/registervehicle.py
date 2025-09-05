@@ -27,6 +27,72 @@ VALID_STATES = {
     "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
 }
 
+class VehicleRegistrationModal(discord.ui.Modal, title="Register Vehicle"):
+    make = discord.ui.TextInput(
+        label="Vehicle Make",
+        placeholder="e.g., Ford, Chevrolet, Toyota",
+        max_length=20,
+        required=True
+    )
+    
+    model = discord.ui.TextInput(
+        label="Vehicle Model", 
+        placeholder="e.g., Explorer, Tahoe, Camry",
+        max_length=20,
+        required=True
+    )
+    
+    color = discord.ui.TextInput(
+        label="Vehicle Color",
+        placeholder="e.g., Blue, Red, Black",
+        max_length=20,
+        required=True
+    )
+    
+    state = discord.ui.TextInput(
+        label="State Code",
+        placeholder="e.g., TX, CA, NY (2 letters)",
+        min_length=2,
+        max_length=2,
+        required=True
+    )
+    
+    plate = discord.ui.TextInput(
+        label="License Plate",
+        placeholder="e.g., ABC123 (2-8 characters)",
+        min_length=2,
+        max_length=8,
+        required=True
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        # Validate inputs
+        make = self.make.value.strip()[:20]
+        model = self.model.value.strip()[:20]
+        color = self.color.value.strip()[:20]
+        state = self.state.value.upper().strip()
+        plate = self.plate.value.upper().strip()
+        
+        if not make or not model or not color:
+            await interaction.followup.send("❌ Make, model, and color cannot be empty.", ephemeral=True)
+            return
+            
+        if state not in VALID_STATES:
+            await interaction.followup.send(f"❌ Invalid state code. Use one of: {', '.join(sorted(VALID_STATES))}.", ephemeral=True)
+            return
+            
+        if not (2 <= len(plate) <= 8 and all(c.isalnum() or c == "-" for c in plate)):
+            await interaction.followup.send("❌ License plate must be 2–8 characters and contain only letters, numbers, or hyphens.", ephemeral=True)
+            return
+        
+        # Process registration
+        cog = interaction.client.get_cog('RegisterVehicle')
+        if cog:
+            await cog.process_registration(interaction, make, model, color, state, plate)
+        else:
+            await interaction.followup.send("❌ Registration system unavailable.", ephemeral=True)
 class RegisterVehicle(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -53,151 +119,135 @@ class RegisterVehicle(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to save sticky ID: {e}")
 
-    @app_commands.command(name="registervehicle", description="Register your vehicle and send the info to a channel")
-    @app_commands.describe(
-        make="Vehicle make (e.g., Ford, max 20 chars)",
-        model="Vehicle model (e.g., Explorer, max 20 chars)",
-        color="Vehicle color (e.g., Blue, max 20 chars)",
-        state="Vehicle registration state (e.g., TX)",
-        plate="License plate (e.g., ABC123, max 8 chars)"
-    )
+    @app_commands.command(name="registervehicle", description="Register your vehicle using an interactive form")
     @app_commands.guilds(discord.Object(id=GUILD_ID))
-    async def registervehicle(self, interaction: discord.Interaction, make: str, model: str, color: str, state: str, plate: str):
-        await interaction.response.defer(ephemeral=True)
-
-        # Validate inputs
-        make = make.strip()[:20]
-        model = model.strip()[:20]
-        color = color.strip()[:20]
-        state = state.upper().strip()
-        plate = plate.upper().strip()
-
-        if not make or not model or not color:
-            await interaction.followup.send("❌ Make, model, and color cannot be empty.", ephemeral=True)
-            return
-        if state not in VALID_STATES:
-            await interaction.followup.send(f"❌ Invalid state code. Use one of: {', '.join(sorted(VALID_STATES))}.", ephemeral=True)
-            return
-        if not (2 <= len(plate) <= 8 and all(c.isalnum() or c == "-" for c in plate)):
-            await interaction.followup.send("❌ License plate must be 2–8 characters and contain only letters, numbers, or hyphens.", ephemeral=True)
-            return
-
-        # Load or create vehicle data
+    async def registervehicle(self, interaction: discord.Interaction):
+        """Open vehicle registration modal"""
+        modal = VehicleRegistrationModal()
+        await interaction.response.send_modal(modal)
+    
+    async def process_registration(self, interaction: discord.Interaction, make: str, model: str, color: str, state: str, plate: str):
+        """Process the vehicle registration after modal submission"""
         try:
-            vehicle_data = {"vehicles": []}
-            if VEHICLES_FILE.exists():
-                with VEHICLES_FILE.open("r", encoding="utf-8") as f:
-                    vehicle_data = json.load(f)
-                if not isinstance(vehicle_data, dict) or "vehicles" not in vehicle_data:
-                    logger.error("Invalid vehicle data format")
-                    await interaction.followup.send("❌ Invalid vehicle data format. Contact the administrator.", ephemeral=True)
-                    return
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse vehicles.json: {e}")
-            await interaction.followup.send("❌ Error reading vehicle data. Contact the administrator.", ephemeral=True)
-            return
-        except Exception as e:
-            logger.error(f"Unexpected error reading vehicles.json: {e}")
-            await interaction.followup.send("❌ An unexpected error occurred. Contact the administrator.", ephemeral=True)
-            return
-
-        # Check for duplicate plate in same state
-        if any(v["plate"] == plate and v["state"] == state for v in vehicle_data["vehicles"]):
-            await interaction.followup.send(f"❌ A vehicle with plate **{plate}** is already registered in **{state}**.", ephemeral=True)
-            return
-
-        # Add new vehicle
-        vehicle_data["vehicles"].append({
-            "userId": str(interaction.user.id),
-            "make": make,
-            "model": model,
-            "color": color,
-            "state": state,
-            "plate": plate,
-            "registeredAt": datetime.utcnow().isoformat()
-        })
-
-        # Save vehicle data
-        try:
-            with VEHICLES_FILE.open("w", encoding="utf-8") as f:
-                json.dump(vehicle_data, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save vehicles.json: {e}")
-            await interaction.followup.send("❌ Failed to save vehicle data. Contact the administrator.", ephemeral=True)
-            return
-
-        # Create vehicle registration embed
-        embed = discord.Embed(
-            title="🚗 New Vehicle Registration",
-            description=f"**Registered by**: <@{interaction.user.id}>\n**Registered on**: {discord.utils.format_dt(datetime.utcnow(), 'F')}",
-            color=0x2ecc71,
-            timestamp=discord.utils.utcnow()
-        )
-        embed.add_field(name="Make", value=make, inline=True)
-        embed.add_field(name="Model", value=model, inline=True)
-        embed.add_field(name="Color", value=color, inline=True)
-        embed.add_field(name="State", value=state, inline=True)
-        embed.add_field(name="Plate", value=plate, inline=True)
-        embed.set_footer(text="MGVRP • Vehicle Registry", icon_url="https://cdn.discordapp.com/attachments/1393957236891713556/1395111568164913313/5b39ef01ba7ebe82c4789d0436064ac9-removebg-preview.png")
-
-        # Send to registry channel
-        channel = interaction.guild.get_channel(VEHICLE_REGISTRY_CHANNEL)
-        if not channel or not isinstance(channel, discord.TextChannel):
-            logger.error(f"Invalid or inaccessible vehicle registry channel: {VEHICLE_REGISTRY_CHANNEL}")
-            await interaction.followup.send("✅ Vehicle registered, but couldn't send to registry channel (invalid or inaccessible).", ephemeral=True)
-            return
-
-        # Delete previous sticky message
-        if self.last_sticky_id:
+            # Load or create vehicle data
             try:
-                prev_sticky = await channel.fetch_message(self.last_sticky_id)
-                await prev_sticky.delete()
-            except discord.HTTPException as e:
-                logger.warning(f"Failed to delete previous sticky message: {e}")
+                vehicle_data = {"vehicles": []}
+                if VEHICLES_FILE.exists():
+                    with VEHICLES_FILE.open("r", encoding="utf-8") as f:
+                        vehicle_data = json.load(f)
+                    if not isinstance(vehicle_data, dict) or "vehicles" not in vehicle_data:
+                        logger.error("Invalid vehicle data format")
+                        await interaction.followup.send("❌ Invalid vehicle data format. Contact the administrator.", ephemeral=True)
+                        return
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse vehicles.json: {e}")
+                await interaction.followup.send("❌ Error reading vehicle data. Contact the administrator.", ephemeral=True)
+                return
+            except Exception as e:
+                logger.error(f"Unexpected error reading vehicles.json: {e}")
+                await interaction.followup.send("❌ An unexpected error occurred. Contact the administrator.", ephemeral=True)
+                return
 
-        # Send vehicle registration
-        try:
-            await channel.send(embed=embed)
-        except discord.Forbidden:
-            logger.error(f"Missing permissions to send to vehicle registry channel: {VEHICLE_REGISTRY_CHANNEL}")
-            await interaction.followup.send("✅ Vehicle registered, but couldn't send to registry channel (missing permissions).", ephemeral=True)
-            return
+            # Check for duplicate plate in same state
+            if any(v["plate"] == plate and v["state"] == state for v in vehicle_data["vehicles"]):
+                await interaction.followup.send(f"❌ A vehicle with plate **{plate}** is already registered in **{state}**.", ephemeral=True)
+                return
 
-        # Send sticky embed
-        sticky_embed = discord.Embed(
-            title="How to Register Your Vehicle",
-            description="Use the `/registervehicle` command with the following information:",
-            color=0x808080
-        )
-        sticky_embed.add_field(name="Make", value="Vehicle manufacturer (e.g., Ford, max 20 chars)", inline=True)
-        sticky_embed.add_field(name="Model", value="Vehicle model (e.g., Explorer, max 20 chars)", inline=True)
-        sticky_embed.add_field(name="Color", value="Vehicle color (e.g., Blue, max 20 chars)", inline=True)
-        sticky_embed.add_field(name="State", value="2-letter state code (e.g., TX, CA)", inline=True)
-        sticky_embed.add_field(name="Plate", value="License plate (e.g., ABC123, 2–8 chars)", inline=True)
-        sticky_embed.set_footer(text="MGVRP • Vehicle Registry", icon_url="https://cdn.discordapp.com/attachments/1393957236891713556/1395111568164913313/5b39ef01ba7ebe82c4789d0436064ac9-removebg-preview.png")
-        try:
-            sticky_msg = await channel.send(embed=sticky_embed)
-            self._save_sticky_id(sticky_msg.id)
-        except discord.Forbidden:
-            logger.error(f"Missing permissions to send sticky message to channel: {VEHICLE_REGISTRY_CHANNEL}")
-            await interaction.followup.send("✅ Vehicle registered, but couldn't send sticky message (missing permissions).", ephemeral=True)
-            return
+            # Add new vehicle
+            vehicle_data["vehicles"].append({
+                "userId": str(interaction.user.id),
+                "make": make,
+                "model": model,
+                "color": color,
+                "state": state,
+                "plate": plate,
+                "registeredAt": datetime.utcnow().isoformat()
+            })
 
-        # Economy handshake
-        economy_channel = interaction.guild.get_channel(ECONOMY_CHANNEL)
-        if economy_channel and isinstance(economy_channel, discord.TextChannel):
+            # Save vehicle data
             try:
-                await economy_channel.send(f"Vehicle registration: <@{interaction.user.id}> -500")
-                await interaction.followup.send("✅ Your vehicle has been registered! A fee of 500 units has been deducted.", ephemeral=True)
+                with VEHICLES_FILE.open("w", encoding="utf-8") as f:
+                    json.dump(vehicle_data, f, indent=2)
+            except Exception as e:
+                logger.error(f"Failed to save vehicles.json: {e}")
+                await interaction.followup.send("❌ Failed to save vehicle data. Contact the administrator.", ephemeral=True)
+                return
+
+            # Create vehicle registration embed
+            embed = discord.Embed(
+                title="🚗 New Vehicle Registration",
+                description=f"**Registered by**: <@{interaction.user.id}>\n**Registered on**: {discord.utils.format_dt(datetime.utcnow(), 'F')}",
+                color=0x2ecc71,
+                timestamp=datetime.utcnow()
+            )
+            embed.add_field(name="Make", value=make, inline=True)
+            embed.add_field(name="Model", value=model, inline=True)
+            embed.add_field(name="Color", value=color, inline=True)
+            embed.add_field(name="State", value=state, inline=True)
+            embed.add_field(name="Plate", value=plate, inline=True)
+            embed.set_footer(text="MGVRP • Vehicle Registry", icon_url="https://cdn.discordapp.com/attachments/1393957236891713556/1395111568164913313/5b39ef01ba7ebe82c4789d0436064ac9-removebg-preview.png")
+
+            # Send to registry channel
+            channel = interaction.guild.get_channel(VEHICLE_REGISTRY_CHANNEL)
+            if not channel or not isinstance(channel, discord.TextChannel):
+                logger.error(f"Invalid or inaccessible vehicle registry channel: {VEHICLE_REGISTRY_CHANNEL}")
+                await interaction.followup.send("✅ Vehicle registered, but couldn't send to registry channel (invalid or inaccessible).", ephemeral=True)
+                return
+
+            # Delete previous sticky message
+            if self.last_sticky_id:
+                try:
+                    prev_sticky = await channel.fetch_message(self.last_sticky_id)
+                    await prev_sticky.delete()
+                except discord.HTTPException as e:
+                    logger.warning(f"Failed to delete previous sticky message: {e}")
+
+            # Send vehicle registration
+            try:
+                await channel.send(embed=embed)
             except discord.Forbidden:
-                logger.error(f"Missing permissions to send to economy channel: {ECONOMY_CHANNEL}")
-                await interaction.followup.send("✅ Your vehicle has been registered, but the economy update failed (missing permissions).", ephemeral=True)
-            except discord.HTTPException as e:
-                logger.error(f"Failed to send to economy channel: {e}")
-                await interaction.followup.send("✅ Your vehicle has been registered, but the economy update failed.", ephemeral=True)
-        else:
-            logger.error(f"Invalid or inaccessible economy channel: {ECONOMY_CHANNEL}")
-            await interaction.followup.send("✅ Your vehicle has been registered, but the economy channel is invalid.", ephemeral=True)
+                logger.error(f"Missing permissions to send to vehicle registry channel: {VEHICLE_REGISTRY_CHANNEL}")
+                await interaction.followup.send("✅ Vehicle registered, but couldn't send to registry channel (missing permissions).", ephemeral=True)
+                return
+
+            # Send sticky embed
+            sticky_embed = discord.Embed(
+                title="How to Register Your Vehicle",
+                description="Use the `/registervehicle` command to open an interactive registration form.",
+                color=0x808080
+            )
+            sticky_embed.add_field(name="Required Information", value="• Vehicle Make (e.g., Ford)\n• Vehicle Model (e.g., Explorer)\n• Vehicle Color (e.g., Blue)\n• State Code (e.g., TX)\n• License Plate (e.g., ABC123)", inline=False)
+            sticky_embed.add_field(name="Registration Fee", value="$500 will be deducted from your wallet", inline=False)
+            sticky_embed.set_footer(text="MGVRP • Vehicle Registry", icon_url="https://cdn.discordapp.com/attachments/1393957236891713556/1395111568164913313/5b39ef01ba7ebe82c4789d0436064ac9-removebg-preview.png")
+            
+            try:
+                sticky_msg = await channel.send(embed=sticky_embed)
+                self._save_sticky_id(sticky_msg.id)
+            except discord.Forbidden:
+                logger.error(f"Missing permissions to send sticky message to channel: {VEHICLE_REGISTRY_CHANNEL}")
+                await interaction.followup.send("✅ Vehicle registered, but couldn't send sticky message (missing permissions).", ephemeral=True)
+                return
+
+            # Economy handshake
+            economy_channel = interaction.guild.get_channel(ECONOMY_CHANNEL)
+            if economy_channel and isinstance(economy_channel, discord.TextChannel):
+                try:
+                    await economy_channel.send(f"Vehicle registration: <@{interaction.user.id}> -500")
+                    await interaction.followup.send("✅ Your vehicle has been registered successfully! A fee of $500 has been deducted from your wallet.", ephemeral=True)
+                except discord.Forbidden:
+                    logger.error(f"Missing permissions to send to economy channel: {ECONOMY_CHANNEL}")
+                    await interaction.followup.send("✅ Your vehicle has been registered, but the economy update failed (missing permissions).", ephemeral=True)
+                except discord.HTTPException as e:
+                    logger.error(f"Failed to send to economy channel: {e}")
+                    await interaction.followup.send("✅ Your vehicle has been registered, but the economy update failed.", ephemeral=True)
+            else:
+                logger.error(f"Invalid or inaccessible economy channel: {ECONOMY_CHANNEL}")
+                await interaction.followup.send("✅ Your vehicle has been registered, but the economy channel is invalid.", ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"Error processing vehicle registration: {e}")
+            await interaction.followup.send("❌ An error occurred while processing your registration.", ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(RegisterVehicle(bot))

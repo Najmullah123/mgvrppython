@@ -31,6 +31,15 @@ intents.members = True  # For member management features
 bot = commands.Bot(command_prefix='!', intents=intents)
 bot.start_time = datetime.utcnow()
 
+# Start web server in a separate thread
+def start_web_server():
+    try:
+        from web_server import start_web_server
+        start_web_server(bot, host='0.0.0.0', port=5000)
+    except ImportError:
+        logger.warning("Web server module not found. Web interface will not be available.")
+    except Exception as e:
+        logger.error(f"Failed to start web server: {e}")
 # Async load_commands to properly await load_extension
 async def load_commands():
     loaded_count = 0
@@ -62,6 +71,12 @@ async def on_ready():
         loaded, failed = await load_commands()
         bot._commands_loaded = True
         logger.info(f'Bot ready with {len(bot.tree.get_commands())} slash commands')
+        
+        # Start web server
+        import threading
+        web_thread = threading.Thread(target=start_web_server, daemon=True)
+        web_thread.start()
+        logger.info("Web server started on http://localhost:5000")
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -109,6 +124,7 @@ async def health_check(ctx):
     embed.add_field(name="Latency", value=f"{round(bot.latency * 1000)}ms", inline=True)
     embed.add_field(name="Guilds", value=len(bot.guilds), inline=True)
     embed.add_field(name="Commands", value=len(bot.tree.get_commands()), inline=True)
+    embed.add_field(name="Web Interface", value="http://localhost:5000", inline=True)
     await ctx.send(embed=embed)
 
 bot.run(TOKEN)

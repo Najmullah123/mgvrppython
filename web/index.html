@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MGVRP Bot Management</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <img src="https://cdn.discordapp.com/attachments/1350837749426683969/1387479314861391964/main_server_logo.webp" alt="MGVRP Logo" class="logo">
+                <h2>MGVRP Bot</h2>
+                <p>Management Portal</p>
+            </div>
+            
+            <ul class="nav-menu">
+                <li><a href="#dashboard" class="nav-link active" data-section="dashboard">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </a></li>
+                <li><a href="#vehicles" class="nav-link" data-section="vehicles">
+                    <i class="fas fa-car"></i> Vehicle System
+                </a></li>
+                <li><a href="#economy" class="nav-link" data-section="economy">
+                    <i class="fas fa-coins"></i> Economy
+                </a></li>
+                <li><a href="#sessions" class="nav-link" data-section="sessions">
+                    <i class="fas fa-gamepad"></i> Sessions
+                </a></li>
+                <li><a href="#moderation" class="nav-link" data-section="moderation">
+                    <i class="fas fa-shield-alt"></i> Moderation
+                </a></li>
+                <li><a href="#users" class="nav-link" data-section="users">
+                    <i class="fas fa-users"></i> User Management
+                </a></li>
+                <li><a href="#settings" class="nav-link" data-section="settings">
+                    <i class="fas fa-cog"></i> Bot Settings
+                </a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <button class="menu-toggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h1 id="page-title">Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <div class="status-indicator">
+                        <span class="status-dot online"></span>
+                        <span>Bot Online</span>
+                    </div>
+                    <div class="user-info">
+                        <img src="https://cdn.discordapp.com/embed/avatars/0.png" alt="User" class="user-avatar">
+                        <span>Admin</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="content-section active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-car"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="total-vehicles">0</h3>
+                            <p>Total Vehicles</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="total-users">0</h3>
+                            <p>Registered Users</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-gamepad"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="active-sessions">0</h3>
+                            <p>Active Sessions</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="total-warnings">0</h3>
+                            <p>Total Warnings</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="dashboard-card">
+                        <h3>Recent Activity</h3>
+                        <div id="recent-activity" class="activity-list">
+                            <!-- Activity items will be populated here -->
+                        </div>
+                    </div>
+                    <div class="dashboard-card">
+                        <h3>System Status</h3>
+                        <div class="system-status">
+                            <div class="status-item">
+                                <span>Bot Status</span>
+                                <span class="status online">Online</span>
+                            </div>
+                            <div class="status-item">
+                                <span>Database</span>
+                                <span class="status online">Connected</span>
+                            </div>
+                            <div class="status-item">
+                                <span>Memory Usage</span>
+                                <span id="memory-usage">Loading...</span>
+                            </div>
+                            <div class="status-item">
+                                <span>Uptime</span>
+                                <span id="uptime">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Vehicle System Section -->
+            <section id="vehicles" class="content-section">
+                <div class="section-header">
+                    <h2>Vehicle Management</h2>
+                    <button class="btn btn-primary" onclick="openModal('addVehicleModal')">
+                        <i class="fas fa-plus"></i> Add Vehicle
+                    </button>
+                </div>
+
+                <div class="filters">
+                    <input type="text" id="vehicle-search" placeholder="Search vehicles..." class="search-input">
+                    <select id="state-filter" class="filter-select">
+                        <option value="">All States</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="exportVehicles()">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table id="vehicles-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Plate</th>
+                                <th>State</th>
+                                <th>Make</th>
+                                <th>Model</th>
+                                <th>Color</th>
+                                <th>Owner</th>
+                                <th>Registered</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Vehicle data will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Economy Section -->
+            <section id="economy" class="content-section">
+                <div class="section-header">
+                    <h2>Economy Management</h2>
+                    <button class="btn btn-primary" onclick="openModal('economyActionModal')">
+                        <i class="fas fa-coins"></i> Economy Action
+                    </button>
+                </div>
+
+                <div class="economy-stats">
+                    <div class="stat-card">
+                        <h4>Total Money in Circulation</h4>
+                        <p id="total-money">$0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Average Balance</h4>
+                        <p id="avg-balance">$0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Richest User</h4>
+                        <p id="richest-user">None</p>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table id="economy-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Wallet</th>
+                                <th>Bank</th>
+                                <th>Total</th>
+                                <th>Last Active</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Economy data will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Sessions Section -->
+            <section id="sessions" class="content-section">
+                <div class="section-header">
+                    <h2>Session Management</h2>
+                    <button class="btn btn-primary" onclick="openModal('createSessionModal')">
+                        <i class="fas fa-plus"></i> Create Session
+                    </button>
+                </div>
+
+                <div class="sessions-grid">
+                    <div id="active-sessions-list" class="sessions-list">
+                        <!-- Active sessions will be populated here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Moderation Section -->
+            <section id="moderation" class="content-section">
+                <div class="section-header">
+                    <h2>Moderation Tools</h2>
+                    <button class="btn btn-danger" onclick="openModal('moderationActionModal')">
+                        <i class="fas fa-gavel"></i> Moderation Action
+                    </button>
+                </div>
+
+                <div class="moderation-stats">
+                    <div class="stat-card">
+                        <h4>Total Warnings</h4>
+                        <p id="mod-total-warnings">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Active Timeouts</h4>
+                        <p id="active-timeouts">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Recent Bans</h4>
+                        <p id="recent-bans">0</p>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table id="moderation-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>Reason</th>
+                                <th>Moderator</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Moderation data will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Users Section -->
+            <section id="users" class="content-section">
+                <div class="section-header">
+                    <h2>User Management</h2>
+                    <button class="btn btn-primary" onclick="refreshUsers()">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table id="users-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>ID</th>
+                                <th>Joined</th>
+                                <th>Roles</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- User data will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section id="settings" class="content-section">
+                <div class="section-header">
+                    <h2>Bot Settings</h2>
+                    <button class="btn btn-success" onclick="saveSettings()">
+                        <i class="fas fa-save"></i> Save Settings
+                    </button>
+                </div>
+
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <h3>General Settings</h3>
+                        <div class="setting-item">
+                            <label>Bot Prefix</label>
+                            <input type="text" id="bot-prefix" value="!">
+                        </div>
+                        <div class="setting-item">
+                            <label>Default Currency Symbol</label>
+                            <input type="text" id="currency-symbol" value="$">
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h3>Economy Settings</h3>
+                        <div class="setting-item">
+                            <label>Daily Reward</label>
+                            <input type="number" id="daily-reward" value="1000">
+                        </div>
+                        <div class="setting-item">
+                            <label>Weekly Reward</label>
+                            <input type="number" id="weekly-reward" value="5000">
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h3>Moderation Settings</h3>
+                        <div class="setting-item">
+                            <label>Auto-ban Threshold (warnings)</label>
+                            <input type="number" id="autoban-threshold" value="5">
+                        </div>
+                        <div class="setting-item">
+                            <label>Default Timeout Duration (minutes)</label>
+                            <input type="number" id="default-timeout" value="60">
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Add Vehicle Modal -->
+    <div id="addVehicleModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Vehicle</h3>
+                <span class="close" onclick="closeModal('addVehicleModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="addVehicleForm">
+                    <div class="form-group">
+                        <label>Owner (Discord ID)</label>
+                        <input type="text" id="vehicle-owner" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Make</label>
+                            <input type="text" id="vehicle-make" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Model</label>
+                            <input type="text" id="vehicle-model" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Color</label>
+                            <input type="text" id="vehicle-color" required>
+                        </div>
+                        <div class="form-group">
+                            <label>State</label>
+                            <select id="vehicle-state" required>
+                                <option value="">Select State</option>
+                                <!-- States will be populated -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>License Plate</label>
+                        <input type="text" id="vehicle-plate" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('addVehicleModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="addVehicle()">Add Vehicle</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Economy Action Modal -->
+    <div id="economyActionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Economy Action</h3>
+                <span class="close" onclick="closeModal('economyActionModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="economyActionForm">
+                    <div class="form-group">
+                        <label>User (Discord ID)</label>
+                        <input type="text" id="economy-user" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Action</label>
+                        <select id="economy-action" required>
+                            <option value="add">Add Money</option>
+                            <option value="remove">Remove Money</option>
+                            <option value="set">Set Balance</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Amount</label>
+                        <input type="number" id="economy-amount" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Target</label>
+                        <select id="economy-target">
+                            <option value="wallet">Wallet</option>
+                            <option value="bank">Bank</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Reason</label>
+                        <input type="text" id="economy-reason" placeholder="Optional reason">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('economyActionModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="performEconomyAction()">Execute</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Session Modal -->
+    <div id="createSessionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create Session</h3>
+                <span class="close" onclick="closeModal('createSessionModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="createSessionForm">
+                    <div class="form-group">
+                        <label>Host (Discord ID)</label>
+                        <input type="text" id="session-host" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Co-Host (Discord ID)</label>
+                        <input type="text" id="session-cohost" placeholder="Optional">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Priority Status</label>
+                            <select id="session-priority" required>
+                                <option value="Low">Low</option>
+                                <option value="Medium">Medium</option>
+                                <option value="High">High</option>
+                                <option value="Emergency">Emergency</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>FRP Speed (MPH)</label>
+                            <input type="number" id="session-frp" value="80" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>House Claiming</label>
+                        <select id="session-housing">
+                            <option value="true">Allowed</option>
+                            <option value="false">Not Allowed</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Session Link</label>
+                        <input type="url" id="session-link" placeholder="Roblox game link" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('createSessionModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="createSession()">Create Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Moderation Action Modal -->
+    <div id="moderationActionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Moderation Action</h3>
+                <span class="close" onclick="closeModal('moderationActionModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="moderationActionForm">
+                    <div class="form-group">
+                        <label>User (Discord ID)</label>
+                        <input type="text" id="mod-user" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Action</label>
+                        <select id="mod-action" required>
+                            <option value="warn">Warn</option>
+                            <option value="timeout">Timeout</option>
+                            <option value="kick">Kick</option>
+                            <option value="ban">Ban</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="duration-group" style="display: none;">
+                        <label>Duration</label>
+                        <input type="text" id="mod-duration" placeholder="e.g., 1h, 30m, 1d">
+                    </div>
+                    <div class="form-group">
+                        <label>Reason</label>
+                        <textarea id="mod-reason" required placeholder="Reason for moderation action"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('moderationActionModal')">Cancel</button>
+                <button class="btn btn-danger" onclick="performModerationAction()">Execute</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
