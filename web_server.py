@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MGVRP Bot Web Management Server
-Provides a web interface for managing the Discord bot
+Provides a web interface for managing the Discord bot with real data integration
 """
 
 import os
@@ -38,45 +38,59 @@ class WebManager:
         global bot_instance
         bot_instance = bot
     
+    def load_json_file(self, filename: str) -> Dict[str, Any]:
+        """Load data from JSON file"""
+        file_path = DATA_DIR / filename
+        try:
+            if file_path.exists():
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                logger.warning(f"File {filename} not found, returning empty data")
+                return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing {filename}: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"Error loading {filename}: {e}")
+            return {}
+    
+    def save_json_file(self, filename: str, data: Dict[str, Any]) -> bool:
+        """Save data to JSON file"""
+        file_path = DATA_DIR / filename
+        try:
+            DATA_DIR.mkdir(exist_ok=True)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            logger.error(f"Error saving {filename}: {e}")
+            return False
+    
     def get_bot_stats(self) -> Dict[str, Any]:
-        """Get comprehensive bot statistics"""
+        """Get comprehensive bot statistics from real data"""
         try:
             # Vehicle stats
-            vehicles_file = DATA_DIR / "vehicles.json"
-            total_vehicles = 0
-            if vehicles_file.exists():
-                with open(vehicles_file, 'r') as f:
-                    vehicle_data = json.load(f)
-                    total_vehicles = len(vehicle_data.get('vehicles', []))
+            vehicles_data = self.load_json_file("vehicles.json")
+            total_vehicles = len(vehicles_data.get('vehicles', []))
             
             # Economy stats
-            economy_file = DATA_DIR / "economy.json"
-            total_users = 0
-            if economy_file.exists():
-                with open(economy_file, 'r') as f:
-                    economy_data = json.load(f)
-                    total_users = len(economy_data.get('users', {}))
+            economy_data = self.load_json_file("economy.json")
+            total_users = len(economy_data.get('users', {}))
             
             # Session stats
-            sessions_file = DATA_DIR / "sessions.json"
-            active_sessions = 0
-            if sessions_file.exists():
-                with open(sessions_file, 'r') as f:
-                    session_data = json.load(f)
-                    active_sessions = len([s for s in session_data.get('sessions', []) 
-                                         if s.get('status') != 'Ended'])
+            sessions_data = self.load_json_file("sessions.json")
+            sessions = sessions_data.get('sessions', [])
+            active_sessions = len([s for s in sessions if s.get('status') != 'Ended'])
             
             # Warning stats
-            warnings_file = DATA_DIR / "warnings.json"
-            total_warnings = 0
-            if warnings_file.exists():
-                with open(warnings_file, 'r') as f:
-                    warning_data = json.load(f)
-                    total_warnings = len(warning_data.get('data', []))
+            warnings_data = self.load_json_file("warnings.json")
+            total_warnings = len(warnings_data.get('data', []))
             
             # System stats
             import psutil
-            memory_usage = f"{psutil.virtual_memory().percent}%"
+            memory_usage = f"{psutil.virtual_memory().percent:.1f}%"
+            cpu_usage = f"{psutil.cpu_percent(interval=1):.1f}%"
             
             # Bot uptime
             if hasattr(self.bot, 'start_time'):
@@ -94,8 +108,11 @@ class WebManager:
                 'activeSessions': active_sessions,
                 'totalWarnings': total_warnings,
                 'memoryUsage': memory_usage,
+                'cpuUsage': cpu_usage,
                 'uptime': uptime,
-                'botStatus': 'online' if self.bot.is_ready() else 'offline'
+                'botStatus': 'online' if self.bot.is_ready() else 'offline',
+                'guildCount': len(self.bot.guilds) if self.bot.guilds else 0,
+                'memberCount': sum(guild.member_count for guild in self.bot.guilds) if self.bot.guilds else 0
             }
         except Exception as e:
             logger.error(f"Error getting bot stats: {e}")
@@ -105,8 +122,11 @@ class WebManager:
                 'activeSessions': 0,
                 'totalWarnings': 0,
                 'memoryUsage': 'N/A',
+                'cpuUsage': 'N/A',
                 'uptime': 'N/A',
-                'botStatus': 'offline'
+                'botStatus': 'offline',
+                'guildCount': 0,
+                'memberCount': 0
             }
 
 # Initialize web manager
@@ -125,352 +145,266 @@ def serve_static(filename):
 
 @app.route('/api/stats')
 def get_stats():
-    """Get bot statistics"""
+    """Get bot statistics from real data"""
     if web_manager:
         return jsonify(web_manager.get_bot_stats())
     return jsonify({'error': 'Bot not connected'}), 503
 
 @app.route('/api/vehicles', methods=['GET'])
 def get_vehicles():
-    """Get all vehicles"""
+    """Get all vehicles from real data"""
     try:
-        vehicles_file = DATA_DIR / "vehicles.json"
-        if not vehicles_file.exists():
-            return jsonify([])
+        if not web_manager:
+            return jsonify({'error': 'Bot not connected'}), 503
         
-        with open(vehicles_file, 'r') as f:
-            data = json.load(f)
-            vehicles = data.get('vehicles', [])
-            
-            # Add owner usernames if bot is available
-            if bot_instance:
-                guild = bot_instance.get_guild(GUILD_ID)
-                if guild:
-                    for vehicle in vehicles:
-                        user_id = vehicle.get('userId')
-                        if user_id:
+        vehicles_data = web_manager.load_json_file("vehicles.json")
+        vehicles = vehicles_data.get('vehicles', [])
+        
+        # Add owner usernames if bot is available
+        if bot_instance:
+            guild = bot_instance.get_guild(GUILD_ID)
+            if guild:
+                for vehicle in vehicles:
+                    user_id = vehicle.get('userId')
+                    if user_id:
+                        try:
                             member = guild.get_member(int(user_id))
-                            vehicle['owner'] = member.display_name if member else f"User#{user_id}"
-            
-            return jsonify(vehicles)
+                            vehicle['ownerName'] = member.display_name if member else f"User#{user_id}"
+                            vehicle['ownerAvatar'] = str(member.avatar.url) if member and member.avatar else None
+                        except:
+                            vehicle['ownerName'] = f"User#{user_id}"
+                            vehicle['ownerAvatar'] = None
+        
+        return jsonify(vehicles)
     except Exception as e:
         logger.error(f"Error getting vehicles: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/vehicles', methods=['POST'])
 def add_vehicle():
-    """Add a new vehicle"""
+    """Add a new vehicle to real data"""
     try:
-        data = request.json
-        vehicles_file = DATA_DIR / "vehicles.json"
+        if not web_manager:
+            return jsonify({'error': 'Bot not connected'}), 503
         
-        # Load existing data
-        if vehicles_file.exists():
-            with open(vehicles_file, 'r') as f:
-                vehicle_data = json.load(f)
-        else:
-            vehicle_data = {'vehicles': []}
+        data = request.json
+        vehicles_data = web_manager.load_json_file("vehicles.json")
+        
+        if 'vehicles' not in vehicles_data:
+            vehicles_data['vehicles'] = []
+        
+        # Check for duplicate plate in same state
+        existing = any(
+            v['plate'].upper() == data['plate'].upper() and 
+            v['state'].upper() == data['state'].upper() 
+            for v in vehicles_data['vehicles']
+        )
+        
+        if existing:
+            return jsonify({'error': 'Vehicle with this plate already exists in this state'}), 400
         
         # Create new vehicle
         new_vehicle = {
             'userId': data['owner'],
-            'make': data['make'],
-            'model': data['model'],
-            'color': data['color'],
-            'state': data['state'],
-            'plate': data['plate'],
-            'registeredAt': datetime.utcnow().isoformat()
+            'make': data['make'].strip().title(),
+            'model': data['model'].strip().title(),
+            'color': data['color'].strip().title(),
+            'state': data['state'].upper(),
+            'plate': data['plate'].upper(),
+            'registeredAt': datetime.utcnow().isoformat() + 'Z'
         }
         
-        vehicle_data['vehicles'].append(new_vehicle)
+        vehicles_data['vehicles'].append(new_vehicle)
         
-        # Save data
-        with open(vehicles_file, 'w') as f:
-            json.dump(vehicle_data, f, indent=2)
-        
-        return jsonify({'success': True, 'vehicle': new_vehicle})
+        if web_manager.save_json_file("vehicles.json", vehicles_data):
+            return jsonify({'success': True, 'vehicle': new_vehicle})
+        else:
+            return jsonify({'error': 'Failed to save vehicle data'}), 500
+            
     except Exception as e:
         logger.error(f"Error adding vehicle: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/vehicles/<vehicle_id>', methods=['DELETE'])
-def delete_vehicle(vehicle_id):
-    """Delete a vehicle"""
+@app.route('/api/vehicles/<int:vehicle_index>', methods=['DELETE'])
+def delete_vehicle(vehicle_index):
+    """Delete a vehicle from real data"""
     try:
-        vehicles_file = DATA_DIR / "vehicles.json"
-        if not vehicles_file.exists():
+        if not web_manager:
+            return jsonify({'error': 'Bot not connected'}), 503
+        
+        vehicles_data = web_manager.load_json_file("vehicles.json")
+        vehicles = vehicles_data.get('vehicles', [])
+        
+        if 0 <= vehicle_index < len(vehicles):
+            deleted_vehicle = vehicles.pop(vehicle_index)
+            
+            if web_manager.save_json_file("vehicles.json", vehicles_data):
+                return jsonify({'success': True, 'deleted': deleted_vehicle})
+            else:
+                return jsonify({'error': 'Failed to save changes'}), 500
+        else:
             return jsonify({'error': 'Vehicle not found'}), 404
-        
-        with open(vehicles_file, 'r') as f:
-            data = json.load(f)
-        
-        # Find and remove vehicle
-        vehicles = data.get('vehicles', [])
-        original_count = len(vehicles)
-        
-        # For simplicity, we'll remove by index (in a real implementation, use proper IDs)
-        try:
-            index = int(vehicle_id) - 1
-            if 0 <= index < len(vehicles):
-                vehicles.pop(index)
-        except (ValueError, IndexError):
-            return jsonify({'error': 'Invalid vehicle ID'}), 400
-        
-        if len(vehicles) == original_count:
-            return jsonify({'error': 'Vehicle not found'}), 404
-        
-        # Save updated data
-        with open(vehicles_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        return jsonify({'success': True})
+            
     except Exception as e:
         logger.error(f"Error deleting vehicle: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/economy', methods=['GET'])
 def get_economy():
-    """Get economy data"""
+    """Get economy data from real data"""
     try:
-        economy_file = DATA_DIR / "economy.json"
-        if not economy_file.exists():
-            return jsonify({'users': []})
+        if not web_manager:
+            return jsonify({'error': 'Bot not connected'}), 503
         
-        with open(economy_file, 'r') as f:
-            data = json.load(f)
-            users = []
+        economy_data = web_manager.load_json_file("economy.json")
+        users_data = economy_data.get('users', {})
+        
+        users = []
+        total_money = 0
+        
+        for user_id, user_data in users_data.items():
+            balance = user_data.get('balance', 0)
+            bank = user_data.get('bank', 0)
+            total_wealth = balance + bank
+            total_money += total_wealth
             
-            # Convert user data to list format
-            for user_id, user_data in data.get('users', {}).items():
-                if bot_instance:
-                    guild = bot_instance.get_guild(GUILD_ID)
-                    if guild:
+            # Get username if bot is available
+            username = f"User#{user_id}"
+            avatar = None
+            
+            if bot_instance:
+                guild = bot_instance.get_guild(GUILD_ID)
+                if guild:
+                    try:
                         member = guild.get_member(int(user_id))
-                        username = member.display_name if member else f"User#{user_id}"
-                    else:
-                        username = f"User#{user_id}"
-                else:
-                    username = f"User#{user_id}"
-                
-                users.append({
-                    'id': user_id,
-                    'username': username,
-                    'balance': user_data.get('balance', 0),
-                    'bank': user_data.get('bank', 0),
-                    'lastActive': user_data.get('last_daily') or user_data.get('last_work') or datetime.utcnow().isoformat()
-                })
+                        if member:
+                            username = member.display_name
+                            avatar = str(member.avatar.url) if member.avatar else None
+                    except:
+                        pass
             
-            return jsonify({'users': users})
+            users.append({
+                'id': user_id,
+                'username': username,
+                'avatar': avatar,
+                'balance': balance,
+                'bank': bank,
+                'total': total_wealth,
+                'totalEarned': user_data.get('total_earned', 0),
+                'totalSpent': user_data.get('total_spent', 0),
+                'lastDaily': user_data.get('last_daily'),
+                'lastWeekly': user_data.get('last_weekly'),
+                'lastWork': user_data.get('last_work')
+            })
+        
+        # Sort by total wealth
+        users.sort(key=lambda x: x['total'], reverse=True)
+        
+        return jsonify({
+            'users': users,
+            'totalMoney': total_money,
+            'averageWealth': total_money / len(users) if users else 0,
+            'richestUser': users[0]['username'] if users else 'None'
+        })
+        
     except Exception as e:
         logger.error(f"Error getting economy data: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/economy/action', methods=['POST'])
-def economy_action():
-    """Perform economy action"""
-    try:
-        data = request.json
-        user_id = data['user']
-        action = data['action']
-        amount = data['amount']
-        target = data['target']
-        
-        economy_file = DATA_DIR / "economy.json"
-        
-        # Load existing data
-        if economy_file.exists():
-            with open(economy_file, 'r') as f:
-                economy_data = json.load(f)
-        else:
-            economy_data = {'users': {}}
-        
-        # Initialize user if not exists
-        if user_id not in economy_data['users']:
-            economy_data['users'][user_id] = {
-                'balance': 0,
-                'bank': 0,
-                'total_earned': 0,
-                'total_spent': 0
-            }
-        
-        user_data = economy_data['users'][user_id]
-        
-        # Perform action
-        if action == 'add':
-            user_data[target] += amount
-            user_data['total_earned'] += amount
-        elif action == 'remove':
-            user_data[target] = max(0, user_data[target] - amount)
-            user_data['total_spent'] += amount
-        elif action == 'set':
-            user_data[target] = amount
-        
-        # Save data
-        with open(economy_file, 'w') as f:
-            json.dump(economy_data, f, indent=2)
-        
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"Error performing economy action: {e}")
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/api/sessions', methods=['GET'])
 def get_sessions():
-    """Get all sessions"""
+    """Get sessions from real data"""
     try:
-        sessions_file = DATA_DIR / "sessions.json"
-        if not sessions_file.exists():
-            return jsonify([])
+        if not web_manager:
+            return jsonify({'error': 'Bot not connected'}), 503
         
-        with open(sessions_file, 'r') as f:
-            data = json.load(f)
-            sessions = data.get('sessions', [])
-            
-            # Add host usernames if bot is available
-            if bot_instance:
-                guild = bot_instance.get_guild(GUILD_ID)
-                if guild:
-                    for session in sessions:
-                        host_id = session.get('host_id')
-                        if host_id:
+        sessions_data = web_manager.load_json_file("sessions.json")
+        sessions = sessions_data.get('sessions', [])
+        
+        # Add host usernames if bot is available
+        if bot_instance:
+            guild = bot_instance.get_guild(GUILD_ID)
+            if guild:
+                for session in sessions:
+                    host_id = session.get('host_id')
+                    if host_id:
+                        try:
                             member = guild.get_member(int(host_id))
-                            session['host'] = member.display_name if member else f"User#{host_id}"
-            
-            return jsonify(sessions)
+                            session['hostName'] = member.display_name if member else f"User#{host_id}"
+                            session['hostAvatar'] = str(member.avatar.url) if member and member.avatar else None
+                        except:
+                            session['hostName'] = f"User#{host_id}"
+                            session['hostAvatar'] = None
+                    
+                    cohost_id = session.get('cohost_id')
+                    if cohost_id:
+                        try:
+                            member = guild.get_member(int(cohost_id))
+                            session['cohostName'] = member.display_name if member else f"User#{cohost_id}"
+                        except:
+                            session['cohostName'] = f"User#{cohost_id}"
+        
+        return jsonify(sessions)
+        
     except Exception as e:
         logger.error(f"Error getting sessions: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/sessions', methods=['POST'])
-def create_session():
-    """Create a new session"""
-    try:
-        data = request.json
-        sessions_file = DATA_DIR / "sessions.json"
-        
-        # Load existing data
-        if sessions_file.exists():
-            with open(sessions_file, 'r') as f:
-                session_data = json.load(f)
-        else:
-            session_data = {'sessions': []}
-        
-        # Create new session
-        new_session = {
-            'id': len(session_data['sessions']) + 1,
-            'host_id': data['host'],
-            'cohost_id': data.get('cohost'),
-            'priority': data['priority'],
-            'frp_speed': data['frpSpeed'],
-            'house_claiming': 'Yes' if data['houseClaming'] else 'No',
-            'session_link': data['link'],
-            'status': 'Setting Up',
-            'participants': [],
-            'created_at': datetime.utcnow().isoformat()
-        }
-        
-        session_data['sessions'].append(new_session)
-        
-        # Save data
-        with open(sessions_file, 'w') as f:
-            json.dump(session_data, f, indent=2)
-        
-        return jsonify({'success': True, 'session': new_session})
-    except Exception as e:
-        logger.error(f"Error creating session: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/sessions/<session_id>/end', methods=['POST'])
-def end_session(session_id):
-    """End a session"""
-    try:
-        sessions_file = DATA_DIR / "sessions.json"
-        if not sessions_file.exists():
-            return jsonify({'error': 'Session not found'}), 404
-        
-        with open(sessions_file, 'r') as f:
-            data = json.load(f)
-        
-        # Find and update session
-        sessions = data.get('sessions', [])
-        for session in sessions:
-            if str(session['id']) == session_id:
-                session['status'] = 'Ended'
-                session['ended_at'] = datetime.utcnow().isoformat()
-                break
-        else:
-            return jsonify({'error': 'Session not found'}), 404
-        
-        # Save updated data
-        with open(sessions_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"Error ending session: {e}")
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/api/moderation', methods=['GET'])
 def get_moderation():
-    """Get moderation data"""
+    """Get moderation data from real data"""
     try:
-        warnings_file = DATA_DIR / "warnings.json"
-        actions = []
-        total_warnings = 0
+        if not web_manager:
+            return jsonify({'error': 'Bot not connected'}), 503
         
-        if warnings_file.exists():
-            with open(warnings_file, 'r') as f:
-                warning_data = json.load(f)
-                warnings = warning_data.get('data', [])
-                total_warnings = len(warnings)
-                
-                # Convert warnings to actions format
-                if bot_instance:
-                    guild = bot_instance.get_guild(GUILD_ID)
-                    for warning in warnings[-20:]:  # Last 20 warnings
-                        user_id = warning.get('user_id')
-                        mod_id = warning.get('moderator_id')
-                        
-                        user_name = f"User#{user_id}"
-                        mod_name = f"Mod#{mod_id}"
-                        
-                        if guild:
-                            user = guild.get_member(int(user_id))
-                            moderator = guild.get_member(int(mod_id))
-                            if user:
-                                user_name = user.display_name
-                            if moderator:
-                                mod_name = moderator.display_name
-                        
-                        actions.append({
-                            'user': user_name,
-                            'action': 'Warning',
-                            'reason': warning.get('reason', 'No reason'),
-                            'moderator': mod_name,
-                            'date': warning.get('timestamp'),
-                            'status': 'Active'
-                        })
+        warnings_data = web_manager.load_json_file("warnings.json")
+        warnings = warnings_data.get('data', [])
+        
+        # Process warnings data
+        processed_warnings = []
+        for warning in warnings[-50:]:  # Last 50 warnings
+            user_id = warning.get('user_id')
+            mod_id = warning.get('moderator_id')
+            
+            user_name = f"User#{user_id}"
+            mod_name = f"Mod#{mod_id}"
+            user_avatar = None
+            
+            if bot_instance:
+                guild = bot_instance.get_guild(GUILD_ID)
+                if guild:
+                    try:
+                        user = guild.get_member(int(user_id))
+                        moderator = guild.get_member(int(mod_id))
+                        if user:
+                            user_name = user.display_name
+                            user_avatar = str(user.avatar.url) if user.avatar else None
+                        if moderator:
+                            mod_name = moderator.display_name
+                    except:
+                        pass
+            
+            processed_warnings.append({
+                'id': warning.get('id'),
+                'userId': user_id,
+                'userName': user_name,
+                'userAvatar': user_avatar,
+                'moderatorId': mod_id,
+                'moderatorName': mod_name,
+                'reason': warning.get('reason', 'No reason'),
+                'timestamp': warning.get('timestamp'),
+                'status': 'Active'
+            })
         
         return jsonify({
-            'totalWarnings': total_warnings,
-            'activeTimeouts': 0,  # Would need to track timeouts separately
-            'recentBans': 0,      # Would need to track bans separately
-            'actions': actions
+            'warnings': processed_warnings,
+            'totalWarnings': len(warnings),
+            'activeTimeouts': 0,  # Would need separate tracking
+            'recentBans': 0       # Would need separate tracking
         })
+        
     except Exception as e:
         logger.error(f"Error getting moderation data: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/moderation/action', methods=['POST'])
-def moderation_action():
-    """Perform moderation action"""
-    try:
-        data = request.json
-        # This would integrate with the bot's moderation system
-        # For now, just return success
-        return jsonify({'success': True, 'message': 'Moderation action would be performed via bot'})
-    except Exception as e:
-        logger.error(f"Error performing moderation action: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/users', methods=['GET'])
@@ -485,58 +419,135 @@ def get_users():
             return jsonify({'error': 'Guild not found'}), 404
         
         users = []
-        for member in guild.members[:50]:  # Limit to first 50 members
+        for member in guild.members[:100]:  # Limit to first 100 members
             users.append({
                 'id': str(member.id),
                 'username': member.display_name,
+                'discriminator': member.discriminator,
                 'avatar': str(member.avatar.url) if member.avatar else str(member.default_avatar.url),
                 'joinedAt': member.joined_at.isoformat() if member.joined_at else None,
                 'roles': [role.name for role in member.roles if role.name != '@everyone'],
-                'status': str(member.status).title()
+                'status': str(member.status).title(),
+                'isBot': member.bot,
+                'permissions': {
+                    'administrator': member.guild_permissions.administrator,
+                    'moderateMembers': member.guild_permissions.moderate_members,
+                    'manageMessages': member.guild_permissions.manage_messages
+                }
             })
         
         return jsonify(users)
+        
     except Exception as e:
         logger.error(f"Error getting users: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/settings', methods=['GET', 'POST'])
-def settings():
-    """Get or update bot settings"""
-    settings_file = DATA_DIR / "settings.json"
-    
-    if request.method == 'GET':
-        try:
-            if settings_file.exists():
-                with open(settings_file, 'r') as f:
-                    return jsonify(json.load(f))
-            else:
-                # Default settings
-                default_settings = {
-                    'botPrefix': '!',
-                    'currencySymbol': '$',
-                    'dailyReward': 1000,
-                    'weeklyReward': 5000,
-                    'autobanThreshold': 5,
-                    'defaultTimeout': 60
-                }
-                return jsonify(default_settings)
-        except Exception as e:
-            logger.error(f"Error getting settings: {e}")
-            return jsonify({'error': str(e)}), 500
-    
-    elif request.method == 'POST':
-        try:
-            settings_data = request.json
-            
-            # Save settings
-            with open(settings_file, 'w') as f:
-                json.dump(settings_data, f, indent=2)
-            
+@app.route('/api/economy/action', methods=['POST'])
+def economy_action():
+    """Perform economy action on real data"""
+    try:
+        if not web_manager:
+            return jsonify({'error': 'Bot not connected'}), 503
+        
+        data = request.json
+        user_id = data['user']
+        action = data['action']
+        amount = int(data['amount'])
+        target = data['target']  # 'balance' or 'bank'
+        
+        economy_data = web_manager.load_json_file("economy.json")
+        
+        if 'users' not in economy_data:
+            economy_data['users'] = {}
+        
+        if user_id not in economy_data['users']:
+            economy_data['users'][user_id] = {
+                'balance': 0,
+                'bank': 0,
+                'total_earned': 0,
+                'total_spent': 0
+            }
+        
+        user_data = economy_data['users'][user_id]
+        
+        if action == 'add':
+            user_data[target] += amount
+            user_data['total_earned'] += amount
+        elif action == 'remove':
+            user_data[target] = max(0, user_data[target] - amount)
+            user_data['total_spent'] += amount
+        elif action == 'set':
+            user_data[target] = amount
+        
+        if web_manager.save_json_file("economy.json", economy_data):
             return jsonify({'success': True})
-        except Exception as e:
-            logger.error(f"Error saving settings: {e}")
-            return jsonify({'error': str(e)}), 500
+        else:
+            return jsonify({'error': 'Failed to save changes'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error performing economy action: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recent-activity')
+def get_recent_activity():
+    """Get recent activity from real data"""
+    try:
+        if not web_manager:
+            return jsonify([])
+        
+        activities = []
+        
+        # Recent vehicles
+        vehicles_data = web_manager.load_json_file("vehicles.json")
+        for vehicle in vehicles_data.get('vehicles', [])[-5:]:
+            try:
+                reg_time = datetime.fromisoformat(vehicle['registeredAt'].replace('Z', '+00:00'))
+                time_ago = datetime.utcnow() - reg_time.replace(tzinfo=None)
+                if time_ago.days < 7:
+                    activities.append({
+                        'icon': 'fas fa-car',
+                        'text': f"Vehicle {vehicle['plate']} registered",
+                        'time': f"{time_ago.days}d {time_ago.seconds//3600}h ago" if time_ago.days > 0 else f"{time_ago.seconds//60}m ago"
+                    })
+            except:
+                continue
+        
+        # Recent sessions
+        sessions_data = web_manager.load_json_file("sessions.json")
+        for session in sessions_data.get('sessions', [])[-3:]:
+            try:
+                created_time = datetime.fromisoformat(session['created_at'])
+                time_ago = datetime.utcnow() - created_time
+                if time_ago.days < 7:
+                    activities.append({
+                        'icon': 'fas fa-gamepad',
+                        'text': f"Session #{session['id']} created",
+                        'time': f"{time_ago.days}d {time_ago.seconds//3600}h ago" if time_ago.days > 0 else f"{time_ago.seconds//60}m ago"
+                    })
+            except:
+                continue
+        
+        # Recent warnings
+        warnings_data = web_manager.load_json_file("warnings.json")
+        for warning in warnings_data.get('data', [])[-3:]:
+            try:
+                warn_time = datetime.fromisoformat(warning['timestamp'])
+                time_ago = datetime.utcnow() - warn_time
+                if time_ago.days < 7:
+                    activities.append({
+                        'icon': 'fas fa-exclamation-triangle',
+                        'text': f"Warning issued to user",
+                        'time': f"{time_ago.days}d {time_ago.seconds//3600}h ago" if time_ago.days > 0 else f"{time_ago.seconds//60}m ago"
+                    })
+            except:
+                continue
+        
+        # Sort by most recent and limit
+        return jsonify(activities[-10:])
+        
+    except Exception as e:
+        logger.error(f"Error getting recent activity: {e}")
+        return jsonify([])
 
 def start_web_server(bot, host='0.0.0.0', port=5000):
     """Start the web server"""
